@@ -1,0 +1,5 @@
+cmd
+scripts
+tmp
+.air.toml
+.gitignore
