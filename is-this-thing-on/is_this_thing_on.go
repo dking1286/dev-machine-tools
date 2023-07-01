@@ -47,7 +47,7 @@ func isThisThingOn(ctx context.Context, e event.Event) error {
 			fmt.Println(err)
 			break
 		}
-		fmt.Printf("Instance %s is %s", resp.GetName(), resp.GetStatus())
+		fmt.Printf("Instance %s is %s\n", resp.GetName(), resp.GetStatus())
 	}
 
 	// Return nil if no error occurred
