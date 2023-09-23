@@ -2,7 +2,8 @@
 
  :deps {com.google.cloud/google-cloud-compute {:mvn/version "1.30.0"}
         com.google.cloud/google-cloud-secretmanager {:mvn/version "2.20.0"}
-        com.google.cloud.functions/functions-framework-api {:mvn/version "1.1.0"}}
+        com.google.cloud.functions/functions-framework-api {:mvn/version "1.1.0"}
+        com.sendgrid/sendgrid-java {:mvn/version "4.9.3"}}
 
  :aliases {:build {:deps {io.github.clojure/tools.build {:git/tag "v0.9.4" :git/sha "76b78fe"}}
                    :ns-default build}}}
