@@ -1,15 +1,10 @@
 (ns dev.dking.dev-machine-tools.is-this-thing-on
-  (:import [com.google.api.client.googleapis.javanet GoogleNetHttpTransport]
-           [com.google.api.client.json.gson GsonFactory]
-           [com.google.api.services.gmail Gmail Gmail$Builder]
-           [com.google.api.services.gmail.model Message]
-           [com.google.cloud.compute.v1 InstancesClient ListInstancesRequest]
+  (:import [com.google.cloud.compute.v1 InstancesClient ListInstancesRequest]
+           [com.google.cloud.pubsub.v1 Publisher]
+           [com.google.protobuf ByteString]
+           [com.google.pubsub.v1 PubsubMessage TopicName]
            [io.cloudevents CloudEvent]
-           [java.io ByteArrayOutputStream]
-           [java.util Properties]
-           [javax.mail MessagingException Session]
-           [javax.mail.internet InternetAddress MimeMessage]
-           [org.apache.commons.codec.binary Base64]))
+           [java.util.concurrent TimeUnit]))
 
 (defn- running?
   [project zone name]
@@ -27,12 +22,29 @@
          :error {:type :no-instance-found}}
         {:result (= (.getStatus instance) "RUNNING")}))))
 
+(defn- publish-alert!
+  [project topic name]
+  (let [publisher (-> (Publisher/newBuilder (TopicName/of project topic))
+                      (.build))]
+    (try
+      (let [message (-> (PubsubMessage/newBuilder)
+                        (.setData (ByteString/copyFromUtf8 (str name " is currently running.")))
+                        (.build))
+            result (.publish publisher message)
+            published-message-id (.get result)]
+        (println (str "Published message " published-message-id)))
+      (finally
+        (.shutdown publisher)
+        (.awaitTermination publisher 1 TimeUnit/MINUTES)))))
+
 (defn accept
   [^CloudEvent _]
   (let [{:keys [result]} (running? "atelier-royal" "us-central1-a" "dev-machine")]
     (if result
-      (println "The machine is running.")
-      (println "The machine is NOT running."))))
+      (do
+        (println "The machine is currently running, publishing alert.")
+        (publish-alert! "atelier-royal" "is-this-thing-on-alerts" "dev-machine"))
+      (println "The machine is NOT running, not publishing an alert."))))
 
 (comment
   ;; Extra requires for development
@@ -61,35 +73,15 @@
   ;; Using the implementation function
   (running? "atelier-royal" "us-central1-a" "dev-machine")
 
-  ;; Gmail api
-  (def transport (GoogleNetHttpTransport/newTrustedTransport))
-  (def json-factory (GsonFactory.))
-  ;; (def gmail (Gmail. transport json-factory nil)) ;; Need to set an "application name" here
-  (def gmail (-> (Gmail$Builder. transport json-factory nil)
-                 (.setApplicationName "dev-machine")
-                 (.build)))
-  (reflect gmail)
-  (def users (.users gmail))
-  (reflect users)
-  (def messages (.messages users))
-  (reflect messages)
+  ;; Publishing to pubsub
+  (def topic-name (TopicName/of "atelier-royal" "is-this-thing-on-alerts"))
 
-  (def mime-message (doto (MimeMessage. (Session/getDefaultInstance (Properties.) nil))
-                      (.setFrom (InternetAddress. "daniel.oliver.king+atelier-royal@gmail.com"))
-                      (.addRecipient javax.mail.Message$RecipientType/TO (InternetAddress. "daniel.oliver.king@gmail.com"))
-                      (.setSubject "This is a test")
-                      (.setText "Hello world")))
-  (def buffer (ByteArrayOutputStream.))
-  (.writeTo mime-message buffer)
-  (def raw (Base64/encodeBase64URLSafeString (.toByteArray buffer)))
+  (def publisher (-> (Publisher/newBuilder topic-name)
+                     (.build)))
+  (def message (-> (PubsubMessage/newBuilder)
+                   (.setData (ByteString/copyFromUtf8 "Hello world"))
+                   (.build)))
+  (def result (.publish publisher message))
+  (.get result)
 
-  (def message (.setRaw (Message.) raw))
-  message
-  ;; Next step: Actually send the message
-  (def send-request (.send messages "me" message))
-  (.execute send-request)
-  ;; Not authorized. I'm going to abandon this approach and try another:
-  ;; 1. Create a pubsub topic "is-this-thing-on-alerts"
-  ;; 2. When the machine is on, put a message on the pubsub topic
-  ;; 3. Create an alerting policy for if the number of unacked messages is > 0.
-  )
+  (publish-alert! "atelier-royal" "is-this-thing-on-alerts" "dev-machine"))
