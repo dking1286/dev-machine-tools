@@ -1,11 +1,15 @@
 (ns dev.dking.dev-machine-tools.is-this-thing-on
-  (:import [com.google.api.gax.rpc NotFoundException PermissionDeniedException]
+  (:import [com.google.api.client.googleapis.javanet GoogleNetHttpTransport]
+           [com.google.api.client.json.gson GsonFactory]
+           [com.google.api.services.gmail Gmail Gmail$Builder]
+           [com.google.api.services.gmail.model Message]
            [com.google.cloud.compute.v1 InstancesClient ListInstancesRequest]
-           [com.google.cloud.secretmanager.v1 SecretManagerServiceClient GetSecretRequest SecretVersionName]
-           [com.sendgrid SendGrid Request Method]
-           [com.sendgrid.helpers.mail Mail]
-           [com.sendgrid.helpers.mail.objects Email Content]
-           [io.cloudevents CloudEvent]))
+           [io.cloudevents CloudEvent]
+           [java.io ByteArrayOutputStream]
+           [java.util Properties]
+           [javax.mail MessagingException Session]
+           [javax.mail.internet InternetAddress MimeMessage]
+           [org.apache.commons.codec.binary Base64]))
 
 (defn- running?
   [project zone name]
@@ -22,25 +26,6 @@
         {:result false
          :error {:type :no-instance-found}}
         {:result (= (.getStatus instance) "RUNNING")}))))
-
-(defn- get-secret
-  [project name alias]
-  (with-open [client (SecretManagerServiceClient/create)]
-    (try
-      (let [secret-version-name (SecretVersionName/of project name alias)
-            secret-version (.accessSecretVersion client secret-version-name)
-            value  (-> secret-version .getPayload .getData .toStringUtf8)]
-        {:result value})
-      (catch NotFoundException e
-        {:error {;; This exception is raised when the secret *name* exists and you have access to it,
-                 ;; but the version is not found.
-                 :type :secret-version-not-found
-                 :exception e}})
-      (catch PermissionDeniedException e
-        {:error {;; If the secret name is not found, you get the same error as if
-                 ;; you don't have access to the secret.
-                 :type :permission-denied-or-secret-name-not-found
-                 :exception e}}))))
 
 (defn accept
   [^CloudEvent _]
@@ -76,49 +61,35 @@
   ;; Using the implementation function
   (running? "atelier-royal" "us-central1-a" "dev-machine")
 
-  ;; Getting a secret
-  (def secrets-client (SecretManagerServiceClient/create))
-  (def secrets-req (-> (GetSecretRequest/newBuilder)
-                       (.setName "projects/atelier-royal/secrets/foo")
-                       (.build)))
-  (def secret (.getSecret secrets-client secrets-req))
-  (reflect secret)
-  (.getName secret)
-  (.getValue secret)
-  (->> (reflect secret)
-       :members
-       (filter #(string/starts-with? (str (:name %)) "get"))
-       (sort-by :name))
-  (.getVersionAliasesMap secret)
+  ;; Gmail api
+  (def transport (GoogleNetHttpTransport/newTrustedTransport))
+  (def json-factory (GsonFactory.))
+  ;; (def gmail (Gmail. transport json-factory nil)) ;; Need to set an "application name" here
+  (def gmail (-> (Gmail$Builder. transport json-factory nil)
+                 (.setApplicationName "dev-machine")
+                 (.build)))
+  (reflect gmail)
+  (def users (.users gmail))
+  (reflect users)
+  (def messages (.messages users))
+  (reflect messages)
 
-  ;; Need to figure out how to tell it to access the secret version with alias "live"
-  (def svn (SecretVersionName/of "atelier-royal" "foo" "live"))
-  (def sv (.accessSecretVersion secrets-client svn))
-  (def payload (.getPayload sv))
-  (reflect payload)
-  (.getData payload)
-  (-> sv .getPayload .getData .toStringUtf8)
-  (reflect sv)
-  (reflect svn)
+  (def mime-message (doto (MimeMessage. (Session/getDefaultInstance (Properties.) nil))
+                      (.setFrom (InternetAddress. "daniel.oliver.king+atelier-royal@gmail.com"))
+                      (.addRecipient javax.mail.Message$RecipientType/TO (InternetAddress. "daniel.oliver.king@gmail.com"))
+                      (.setSubject "This is a test")
+                      (.setText "Hello world")))
+  (def buffer (ByteArrayOutputStream.))
+  (.writeTo mime-message buffer)
+  (def raw (Base64/encodeBase64URLSafeString (.toByteArray buffer)))
 
-  (get-secret "atelier-royal" "foo" "live")
-  (get-secret "atelier-royal" "foo" "blahblah")
-  (get-secret "atelier-royal" "blah" "live")
-  (get-secret "atelier-royal" "sendgrid-email-send-key" "latest")
-
-  (def mail (Mail. (Email. "daniel.oliver.king@gmail.com")
-                   "Testing"
-                   (Email. "daniel.oliver.kind@gmail.com")
-                   (Content. "text/plain" "Testing 123")))
-  (def sg-api-key (:result (get-secret "atelier-royal" "sendgrid-email-send-key" "latest")))
-  (def sg-client (SendGrid. sg-api-key))
-
-  (def req (doto (Request.)
-             (.setMethod Method/POST)
-             (.setEndpoint "mail/send")
-             (.setBody (.build mail))))
-  (def res (.api sg-client req))
-  (reflect res)
-  (.getStatusCode res)
-  (.getBody res))
-
+  (def message (.setRaw (Message.) raw))
+  message
+  ;; Next step: Actually send the message
+  (def send-request (.send messages "me" message))
+  (.execute send-request)
+  ;; Not authorized. I'm going to abandon this approach and try another:
+  ;; 1. Create a pubsub topic "is-this-thing-on-alerts"
+  ;; 2. When the machine is on, put a message on the pubsub topic
+  ;; 3. Create an alerting policy for if the number of unacked messages is > 0.
+  )
