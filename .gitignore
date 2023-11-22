@@ -1,3 +1,4 @@
+?
 pom.xml
 pom.xml.asc
 *.jar
@@ -15,3 +16,5 @@ pom.xml.asc
 .calva
 .clj-kondo
 .lsp
+
+is-this-thing-on/tmp
