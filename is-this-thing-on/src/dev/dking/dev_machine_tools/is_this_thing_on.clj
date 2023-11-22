@@ -7,6 +7,7 @@
            [java.util.concurrent TimeUnit]))
 
 (defn- running?
+  "Checks if the development machine is currently running."
   [project zone name]
   (with-open [client (InstancesClient/create)]
     (let [instance (-> client
@@ -23,12 +24,14 @@
         {:result (= (.getStatus instance) "RUNNING")}))))
 
 (defn- publish-alert!
+  "Publishes an alert that the dev machine is running to a pubsub topic."
   [project topic name]
   (let [publisher (-> (Publisher/newBuilder (TopicName/of project topic))
                       (.build))]
     (try
-      (let [message (-> (PubsubMessage/newBuilder)
-                        (.setData (ByteString/copyFromUtf8 (str name " is currently running.")))
+      (let [message-body (str name " is currently running.")
+            message (-> (PubsubMessage/newBuilder)
+                        (.setData (ByteString/copyFromUtf8 message-body))
                         (.build))
             result (.publish publisher message)
             published-message-id (.get result)]
@@ -38,12 +41,17 @@
         (.awaitTermination publisher 1 TimeUnit/MINUTES)))))
 
 (defn accept
+  "Main entry point for the GCP Cloud Function."
   [^CloudEvent _]
-  (let [{:keys [result]} (running? "atelier-royal" "us-central1-a" "dev-machine")]
+  (let [project "atelier-royal"
+        vm-zone "us-central1-a"
+        vm-name "dev-machine"
+        alert-topic "is-this-thing-on-alerts"
+        {:keys [result]} (running? project vm-zone vm-name)]
     (if result
       (do
         (println "The machine is currently running, publishing alert.")
-        (publish-alert! "atelier-royal" "is-this-thing-on-alerts" "dev-machine"))
+        (publish-alert! project alert-topic vm-name))
       (println "The machine is NOT running, not publishing an alert."))))
 
 (comment
