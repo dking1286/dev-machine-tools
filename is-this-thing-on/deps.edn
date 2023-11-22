@@ -2,7 +2,10 @@
 
  :deps {com.google.cloud/google-cloud-compute {:mvn/version "1.30.0"}
         com.google.cloud/google-cloud-pubsub {:mvn/version "1.125.11"}
-        com.google.cloud.functions/functions-framework-api {:mvn/version "1.1.0"}}
+        com.google.cloud.functions/functions-framework-api {:mvn/version
+                                                            "1.1.0"}}
 
- :aliases {:build {:deps {io.github.clojure/tools.build {:git/tag "v0.9.4" :git/sha "76b78fe"}}
+ :aliases {:build {:deps {babashka/process {:mvn/version "0.5.21"}
+                          io.github.clojure/tools.build {:git/tag "v0.9.4"
+                                                         :git/sha "76b78fe"}}
                    :ns-default build}}}

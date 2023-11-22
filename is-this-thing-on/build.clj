@@ -1,5 +1,7 @@
 (ns build
-  (:require [clojure.tools.build.api :as b]))
+  (:require [babashka.process :refer [shell]]
+            [clojure.edn :as edn]
+            [clojure.tools.build.api :as b]))
 
 (def deps-file "deps.edn")
 (def src-dir "src")
@@ -10,6 +12,8 @@
 (def jar-file (format "%s/is-this-thing-on.jar" deployment-dir))
 
 (def basis (b/create-basis {:project deps-file}))
+
+;; Base tasks ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn clean
   [& _]
@@ -37,13 +41,35 @@
            :class-dir class-dir
            :uber-file jar-file}))
 
+(defn deploy-uberjar
+  [& _]
+  (println "Deploying GCP Cloud Function...")
+  (shell (format "gcloud functions deploy is_this_thing_on
+                  --gen2
+                  --region=\"us-central1\"
+                  --runtime=\"java17\"
+                  --memory=\"512MiB\"
+                  --source=\"%s\"
+                  --entry-point=\"dev.dking.dev_machine_tools.is_this_thing_on.CloudFunction\"
+                  --trigger-topic=\"is-this-thing-on\""
+                 deployment-dir)))
+
+;; Composite tasks ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (defn uberjar
   [& _]
   (clean)
   (compile-java)
   (compile-clojure)
+  (pack-uberjar))
+
+(defn deploy
+  [& _]
+  (clean)
+  (compile-java)
+  (compile-clojure)
   (pack-uberjar)
-  (println "Done!"))
+  (deploy-uberjar))
 
 (comment
   (clean)
@@ -59,4 +85,5 @@
             :class-dir class-dir
             :basis basis})
 
-  (uberjar))
+  (uberjar)
+  (deploy))
