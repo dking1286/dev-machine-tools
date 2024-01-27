@@ -1,6 +1,5 @@
 (ns build
   (:require [babashka.process :refer [shell]]
-            [clojure.edn :as edn]
             [clojure.tools.build.api :as b]))
 
 (def deps-file "deps.edn")
