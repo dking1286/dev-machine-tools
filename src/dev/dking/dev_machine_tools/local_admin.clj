@@ -1,7 +1,9 @@
 (ns dev.dking.dev-machine-tools.local-admin
-  (:require [clojure.data.json :as json]
+  (:require [babashka.process :refer [shell]]
+            [clojure.data.json :as json]
             [clojure.edn :as edn]
             [clojure.java.io :as io]
+            [clojure.tools.build.api :as b]
             [dev.dking.dev-machine-tools.config :refer [get-config]])
   (:import [com.google.cloud.compute.v1
             InstancesClient
@@ -10,8 +12,20 @@
             StopInstanceRequest]
            [com.google.protobuf.util JsonFormat]))
 
+(def deps-file "deps.edn")
+(def src-dir "src")
+(def java-src-dir "java_src")
+(def target-dir "target")
+(def class-dir (format "%s/classes" target-dir))
+(def deployment-dir (format "%s/deployment" target-dir))
+(def idle-monitoring-jar-file (format "%s/is-this-thing-on.jar" deployment-dir))
+
+(def basis (b/create-basis {:project deps-file}))
+
 (def status {:running "RUNNING"
              :terminated "TERMINATED"})
+
+;; Instance management helper functions ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn- unsafe-proto->edn
   [proto]
@@ -112,6 +126,50 @@
                              :instance-name instance-name})
             (println "Instance stopped!")))))))
 
+;; Idle monitoring deployment helper functions ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn- clean
+  [& _]
+  (println (format "Cleaning directory %s...", target-dir))
+  (b/delete {:path target-dir}))
+
+(defn- compile-java
+  [& _]
+  (println (format "Compiling Java from %s into %s..." java-src-dir class-dir))
+  (b/javac {:src-dirs ["java_src"]
+            :class-dir class-dir
+            :basis basis}))
+
+(defn- compile-clojure
+  [& _]
+  (println (format "Compiling Clojure from %s into %s..." src-dir class-dir))
+  (b/compile-clj {:basis basis
+                  :src-dirs [src-dir]
+                  :class-dir class-dir
+                  :ns-compile '[dev.dking.dev-machine-tools.is-this-thing-on]}))
+
+(defn- pack-uberjar
+  [& _]
+  (println (format "Packaging code into %s..." idle-monitoring-jar-file))
+  (b/uber {:basis basis
+           :class-dir class-dir
+           :uber-file idle-monitoring-jar-file}))
+
+(defn- deploy-uberjar
+  [& _]
+  (println "Deploying GCP Cloud Function...")
+  (shell (format "gcloud functions deploy is_this_thing_on
+                  --gen2
+                  --region=\"us-central1\"
+                  --runtime=\"java17\"
+                  --memory=\"512MiB\"
+                  --source=\"%s\"
+                  --entry-point=\"dev.dking.dev_machine_tools.is_this_thing_on.CloudFunction\"
+                  --trigger-topic=\"is-this-thing-on\""
+                 deployment-dir)))
+
+;; Public CLI commands ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (defn up
   [& _]
   (up-impl (get-config))
@@ -121,6 +179,14 @@
   [& _]
   (down-impl (get-config))
   (System/exit 0))
+
+(defn deploy-idle-monitoring
+  [& _]
+  (clean)
+  (compile-java)
+  (compile-clojure)
+  (pack-uberjar)
+  (deploy-uberjar))
 
 (comment
   (slurp (io/resource "blah.edn"))
