@@ -1,6 +1,13 @@
 (ns dev.dking.dev-machine-tools.local-admin
-  (:require [clojure.data.json :as json])
-  (:import [com.google.cloud.compute.v1 InstancesClient ListInstancesRequest StartInstanceRequest StopInstanceRequest]
+  (:require [clojure.data.json :as json]
+            [clojure.edn :as edn]
+            [clojure.java.io :as io]
+            [dev.dking.dev-machine-tools.config :refer [get-config]])
+  (:import [com.google.cloud.compute.v1
+            InstancesClient
+            ListInstancesRequest
+            StartInstanceRequest
+            StopInstanceRequest]
            [com.google.protobuf.util JsonFormat]))
 
 (def status {:running "RUNNING"
@@ -52,21 +59,26 @@
     (proto->edn result)))
 
 (defn- up-impl
-  []
+  [{project :project-id {zone :zone instance-name :name} :instance}]
   (with-open [instances-client (InstancesClient/create)]
-    (let [project "atelier-royal"
-          zone "us-central1-a"
-          instance-name "dev-machine"
-          instance (get-instance instances-client
+    (let [instance (get-instance instances-client
                                  {:project project
                                   :zone zone
                                   :instance-name instance-name})]
       (if-not instance
-        (println "No instance found.")
+        (println (format (str "No instance named %s found in project "
+                              "%s, zone %s.")
+                         instance-name
+                         project
+                         zone))
         (if (= (instance :status) (status :running))
           (println "Instance is already running, no need to start it.")
           (do
-            (println "Starting instance...")
+            (println (format (str "Starting instance %s in project %s, "
+                                  "zone %s.")
+                             instance-name
+                             project
+                             zone))
             (start-instance! instances-client
                              {:project project
                               :zone zone
@@ -74,21 +86,26 @@
             (println "Instance started!")))))))
 
 (defn- down-impl
-  []
+  [{project :project-id {zone :zone instance-name :name} :instance}]
   (with-open [instances-client (InstancesClient/create)]
-    (let [project "atelier-royal"
-          zone "us-central1-a"
-          instance-name "dev-machine"
-          instance (get-instance instances-client
+    (let [instance (get-instance instances-client
                                  {:project project
                                   :zone zone
                                   :instance-name instance-name})]
       (if-not instance
-        (println "No instance found.")
+        (println (format (str "No instance named %s found in project "
+                              "%s, zone %s.")
+                         instance-name
+                         project
+                         zone))
         (if (= (instance :status) (status :terminated))
           (println "Instance is already terminated, no need to stop it.")
           (do
-            (println "Stopping instance...")
+            (println (format (str "Stopping instance %s in project %s, "
+                                  "zone %s.")
+                             instance-name
+                             project
+                             zone))
             (stop-instance! instances-client
                             {:project project
                              :zone zone
@@ -97,56 +114,18 @@
 
 (defn up
   [& _]
-  (up-impl)
+  (up-impl (get-config))
   (System/exit 0))
 
 (defn down
   [& _]
-  (down-impl)
+  (down-impl (get-config))
   (System/exit 0))
 
 (comment
-  (require '[clojure.reflect :refer [reflect]])
-  (import '[com.google.protobuf.util JsonFormat])
-  (def client (InstancesClient/create))
-  (def request (-> (ListInstancesRequest/newBuilder)
-                   (.setProject "atelier-royal")
-                   (.setZone "us-central1-a")
-                   (.setFilter (format "name=%s" "dev-machine"))
-                   (.build)))
-  (def response (.list client request))
-  (def instance (first (.iterateAll response)))
-  (proto->edn instance)
-  (reflect instance)
-  (.getStatus instance)
-
-  (def start-instance-request (-> (StartInstanceRequest/newBuilder)
-                                  (.setProject "atelier-royal")
-                                  (.setZone "us-central1-a")
-                                  (.setInstance "dev-machine")
-                                  (.build)))
-  (def start-instance-future (.startAsync client start-instance-request))
-  (def start-instance-result (.get start-instance-future))
-  (proto->edn start-instance-result)
-  (reflect start-instance-result)
-  (reflect (.getErrorsList (.getError start-instance-result)))
-  (-> start-instance-result
-      (.getError)
-      (.getErrorsList))
-  (proto->edn nil)
-
-  (up-impl)
-
-  (get-instance client {:project "atelier-royal"
-                        :zone "us-central1-a"
-                        :instance-name "dev-machine"})
-
-  (let [request (-> (StopInstanceRequest/newBuilder)
-                    (.setProject "atelier-royal")
-                    (.setZone "us-central1-a")
-                    (.setInstance "dev-machine")
-                    (.build))
-        result-future (.stopAsync client request)
-        result (.get result-future)]
-    (proto->edn result)))
+  (slurp (io/resource "blah.edn"))
+  (get-config)
+  (def rdr (java.io.PushbackReader. (io/reader (io/resource "blah.edn"))))
+  (def rdr (java.io.PushbackReader. (io/reader (io/resource "config.edn"))))
+  (edn/read rdr))
 

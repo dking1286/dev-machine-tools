@@ -1,4 +1,4 @@
-{:paths ["src"]
+{:paths ["src" "resources"]
 
  :deps {com.google.cloud/google-cloud-compute {:mvn/version "1.30.0"
                                                :exclusions [io.grpc/grpc-netty-shaded]}
