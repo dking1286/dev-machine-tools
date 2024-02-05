@@ -1,4 +1,5 @@
 (ns dev.dking.dev-machine-tools.is-this-thing-on
+  (:require [dev.dking.dev-machine-tools.config :refer [get-config]])
   (:import [com.google.cloud.compute.v1 InstancesClient ListInstancesRequest]
            [com.google.cloud.pubsub.v1 Publisher]
            [com.google.protobuf ByteString]
@@ -43,53 +44,13 @@
 (defn accept
   "Main entry point for the GCP Cloud Function."
   [^CloudEvent _]
-  (let [project "atelier-royal"
-        vm-zone "us-central1-a"
-        vm-name "dev-machine"
-        alert-topic "is-this-thing-on-alerts"
+  (let [{project :project-id
+         {vm-zone :zone
+          vm-name :name} :instance
+         {alert-topic :alert-topic} :idle-monitoring} (get-config)
         {:keys [result]} (running? project vm-zone vm-name)]
     (if result
       (do
         (println "The machine is currently running, publishing alert.")
         (publish-alert! project alert-topic vm-name))
       (println "The machine is NOT running, not publishing an alert."))))
-
-(comment
-  ;; Extra requires for development
-  (require '[clojure.reflect :refer [reflect]])
-  (require '[clojure.string :as string])
-
-  ;; Getting a client
-  (def client (InstancesClient/create))
-  (reflect client)
-
-  ;; Creating a request
-  (def req (-> (ListInstancesRequest/newBuilder)
-               (.setProject "atelier-royal")
-               (.setZone "us-central1-a")
-               (.setFilter "name=dev-machine")
-               (.build)))
-  (reflect req)
-
-  ;; Sending the request and inspecting the response
-  (def resp (.list client req))
-  (def instances (seq (.iterateAll resp)))
-  (println instances)
-  (reflect (first instances))
-  (.getStatus (first instances))
-
-  ;; Using the implementation function
-  (running? "atelier-royal" "us-central1-a" "dev-machine")
-
-  ;; Publishing to pubsub
-  (def topic-name (TopicName/of "atelier-royal" "is-this-thing-on-alerts"))
-
-  (def publisher (-> (Publisher/newBuilder topic-name)
-                     (.build)))
-  (def message (-> (PubsubMessage/newBuilder)
-                   (.setData (ByteString/copyFromUtf8 "Hello world"))
-                   (.build)))
-  (def result (.publish publisher message))
-  (.get result)
-
-  (publish-alert! "atelier-royal" "is-this-thing-on-alerts" "dev-machine"))

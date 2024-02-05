@@ -15,6 +15,7 @@
 (def deps-file "deps.edn")
 (def src-dir "src")
 (def java-src-dir "java_src")
+(def resources-dir "resources")
 (def target-dir "target")
 (def class-dir (format "%s/classes" target-dir))
 (def deployment-dir (format "%s/deployment" target-dir))
@@ -129,44 +130,56 @@
 ;; Idle monitoring deployment helper functions ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn- clean
-  [& _]
+  []
   (println (format "Cleaning directory %s...", target-dir))
   (b/delete {:path target-dir}))
 
 (defn- compile-java
-  [& _]
+  []
   (println (format "Compiling Java from %s into %s..." java-src-dir class-dir))
-  (b/javac {:src-dirs ["java_src"]
+  (b/javac {:src-dirs [java-src-dir]
             :class-dir class-dir
             :basis basis}))
 
 (defn- compile-clojure
-  [& _]
+  []
   (println (format "Compiling Clojure from %s into %s..." src-dir class-dir))
   (b/compile-clj {:basis basis
                   :src-dirs [src-dir]
                   :class-dir class-dir
                   :ns-compile '[dev.dking.dev-machine-tools.is-this-thing-on]}))
 
+(defn- copy-static-files
+  []
+  (println (format "Copying static files from %s into %s" resources-dir class-dir))
+  (b/copy-dir {:src-dirs [resources-dir]
+               :target-dir class-dir}))
+
 (defn- pack-uberjar
-  [& _]
+  []
   (println (format "Packaging code into %s..." idle-monitoring-jar-file))
   (b/uber {:basis basis
            :class-dir class-dir
            :uber-file idle-monitoring-jar-file}))
 
 (defn- deploy-uberjar
-  [& _]
-  (println "Deploying GCP Cloud Function...")
-  (shell (format "gcloud functions deploy is_this_thing_on
+  [config]
+  (let [{:keys [trigger-topic-name
+                cloud-function-name
+                cloud-function-region]} (config :idle-monitoring)]
+    (println "Deploying GCP Cloud Function...")
+    (shell (format "gcloud functions deploy %s
                   --gen2
-                  --region=\"us-central1\"
+                  --region=\"%s\"
                   --runtime=\"java17\"
                   --memory=\"512MiB\"
                   --source=\"%s\"
                   --entry-point=\"dev.dking.dev_machine_tools.is_this_thing_on.CloudFunction\"
-                  --trigger-topic=\"is-this-thing-on\""
-                 deployment-dir)))
+                  --trigger-topic=\"%s\""
+                   cloud-function-name
+                   cloud-function-region
+                   deployment-dir
+                   trigger-topic-name))))
 
 ;; Public CLI commands ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -183,10 +196,11 @@
 (defn deploy-idle-monitoring
   [& _]
   (clean)
+  (copy-static-files)
   (compile-java)
   (compile-clojure)
   (pack-uberjar)
-  (deploy-uberjar))
+  (deploy-uberjar (get-config)))
 
 (comment
   (slurp (io/resource "blah.edn"))

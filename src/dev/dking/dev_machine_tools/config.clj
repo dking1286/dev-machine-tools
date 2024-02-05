@@ -11,7 +11,20 @@
 (s/def ::name ::non-empty-string)
 (s/def ::instance (s/keys :req-un [::zone ::name]))
 
-(s/def ::config (s/keys :req-un [::project-id ::instance]))
+(s/def ::scheduler-job-name ::non-empty-string)
+(s/def ::frequency ::non-empty-string)
+(s/def ::trigger-topic-name ::non-empty-string)
+(s/def ::cloud-function-name ::non-empty-string)
+(s/def ::cloud-function-region ::non-empty-string)
+(s/def ::alert-topic ::non-empty-string)
+(s/def ::idle-monitoring (s/keys :req-un [::scheduler-job-name
+                                          ::frequency
+                                          ::trigger-topic-name
+                                          ::cloud-function-name
+                                          ::cloud-function-region
+                                          ::alert-topic]))
+
+(s/def ::config (s/keys :req-un [::project-id ::instance ::idle-monitoring]))
 
 (defn- get-config-resource-or-throw
   []
