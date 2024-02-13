@@ -13,4 +13,26 @@
         io.grpc/grpc-okhttp {:mvn/version "1.59.0"}
         org.clojure/data.json {:mvn/version "2.4.0"}}
 
- :aliases {:run {:ns-default dev.dking.dev-machine-tools.local-admin}}}
+ :aliases {;; Alias for development. Use this alias when starting a repl in
+           ;; your favorite editor.
+           :dev {:extra-paths ["test"]}
+           ;; Alias for running tests.
+           ;;
+           ;; To run all tests once:
+           ;; clj -X:test
+           ;;
+           ;; To rerun tests on every change:
+           ;; clj -X:test :watch? true
+           :test {:extra-paths ["test"]
+                  :extra-deps {lambdaisland/kaocha {:mvn/version "1.87.1366"}}
+                  :exec-fn kaocha.runner/exec-fn
+                  :exec-args {}}
+           ;; Alias for calling CLI commands defined in the `local-admin`
+           ;; namespace.
+           ;;
+           ;; Usage:
+           ;; clj -X:run <command name>
+           ;;
+           ;; Example usage to turn on the dev machine:
+           ;; clj -X:run up
+           :run {:ns-default dev.dking.dev-machine-tools.local-admin}}}
